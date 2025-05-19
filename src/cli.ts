@@ -2,7 +2,7 @@
 import readline from 'readline';
 import chalk from 'chalk';
 import type { User, Restaurant } from './types';
-import { getAllUsers, getUserById, getAllRestaurants as dbGetAllRestaurants } from './database';
+import { getAllUsers, getUserById, getAllRestaurants as dbGetAllRestaurants, recordUserLike, getLikedRestaurantIdsByUser } from './database';
 import { getRecommendations } from './recommender';
 
 const rl = readline.createInterface({
@@ -69,40 +69,62 @@ export async function runCLI() {
     const currentUser = await selectUser();
     if (!currentUser) break;
 
-    let shownRestaurantIds = new Set<number>();
-    let potentialRecommendations = await getRecommendations(currentUser, allDbRestaurants, shownRestaurantIds);
+    // Fetch liked restaurants for the current user at the start of their session
+    const initiallyLikedRestaurantIds = await getLikedRestaurantIdsByUser(currentUser.id);
+    let shownAndLikedRestaurantIds = new Set<number>(initiallyLikedRestaurantIds); // Combine with session's shown IDs
+
+    let potentialRecommendations = await getRecommendations(currentUser, allDbRestaurants, shownAndLikedRestaurantIds);
+
+    if (potentialRecommendations.length === 0 && initiallyLikedRestaurantIds.length > 0) {
+        console.log(chalk.blue(`You've previously liked ${initiallyLikedRestaurantIds.length} restaurant(s). No new recommendations match your preferences at the moment.`));
+    } else if (potentialRecommendations.length === 0) {
+        console.log(chalk.yellow("\nNo restaurants currently match your preferences."));
+    }
+
 
     while (potentialRecommendations.length > 0) {
-      const nextRestaurant = potentialRecommendations.shift(); // Get the top one
-      if (!nextRestaurant || !nextRestaurant.id) continue; // Should not happen if filtered correctly
+      const nextRestaurant = potentialRecommendations.shift();
+      if (!nextRestaurant || !nextRestaurant.id) continue;
 
       displayRestaurant(nextRestaurant);
-      shownRestaurantIds.add(nextRestaurant.id);
+      
+      // Add to shown set regardless of like/dislike to avoid re-showing in this session
+      shownAndLikedRestaurantIds.add(nextRestaurant.id);
+
 
       const action = (await askQuestion(chalk.cyan("Like it? (y/n, or 'q' to change user, 'Q' to quit app): "))).toLowerCase();
 
-      if (action === 'q') {
-        break; // Break inner loop to re-select user
-      }
-      if (action === 'Q') {
+      if (action === 'y') {
+        console.log(chalk.green(`You liked ${nextRestaurant.name}! Saving to your preferences...`));
+        await recordUserLike(currentUser.id, nextRestaurant.id); // <--- RECORD THE LIKE
+        // No need to add to shownAndLikedRestaurantIds again, it was added above
+      } else if (action === 'n') {
+        // For 'n', we don't record it as a "dislike" yet, but it's already in shownAndLikedRestaurantIds
+        // so it won't be shown again in this session's immediate recommendation list.
+      } else if (action === 'q') {
+        break;
+      } else if (action === 'Q') {
         rl.close();
-        return; // Exit CLI
+        return;
       }
       
-      // If 'y' or 'n', we just proceed to the next recommendation from the current sorted list.
-      // More advanced: if 'n', re-calculate recommendations penalizing features of the disliked one.
-      // For now, simply excluding already shown ones is sufficient for basic Y/N flow.
+      // Regenerate recommendations excluding all shown or liked ones for this session
+      // This ensures previously liked items (from DB) are also excluded from new suggestions.
+      potentialRecommendations = await getRecommendations(currentUser, allDbRestaurants, shownAndLikedRestaurantIds);
       
       if (potentialRecommendations.length === 0) {
-         potentialRecommendations = await getRecommendations(currentUser, allDbRestaurants, shownRestaurantIds);
-         if(potentialRecommendations.length === 0) {
-            console.log(chalk.yellow("\nNo more matching restaurants based on your preferences and interactions."));
-            break;
-         }
+        const remainingUnseen = allDbRestaurants.filter(r => r.id && !shownAndLikedRestaurantIds.has(r.id)).length;
+        if (remainingUnseen === 0) {
+             console.log(chalk.yellow("\nNo more restaurants to show based on your preferences and interactions. You've seen them all!"));
+        } else {
+             console.log(chalk.yellow("\nNo more matching restaurants based on your preferences and interactions."));
+        }
+        break;
       }
     }
     if (potentialRecommendations.length === 0 && currentUser) {
-        console.log(chalk.yellow(`\nAll suitable recommendations shown for ${currentUser.name} based on current criteria.`));
+        // This message might be redundant given the one inside the loop
+        // console.log(chalk.yellow(`\nAll suitable recommendations shown for ${currentUser.name} based on current criteria.`));
     }
   }
   console.log(chalk.bold.green("\nExiting Recommender. Goodbye!"));

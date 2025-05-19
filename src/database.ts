@@ -39,6 +39,16 @@ export async function initDB(): Promise<Database> {
       dietaryOptions TEXT, -- JSON string array
       rating REAL
     );
+
+     -- NEW TABLE for user likes
+    CREATE TABLE IF NOT EXISTS user_likes (
+      user_id INTEGER NOT NULL,
+      restaurant_id INTEGER NOT NULL,
+      liked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, restaurant_id), -- Ensures a user can only like a restaurant once
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
+    );
   `);
   console.log("Database initialized and tables created/verified.");
   return db;
@@ -197,5 +207,33 @@ export async function fetchAndSaveRestaurants(locationQuery: string): Promise<vo
       console.log(chalk.blue("All fetched restaurants already existed in the database."));
   } else if (savedCount === 0 && restaurantsFromApi.length > 0) {
       console.log(chalk.yellow("No new restaurants were saved. This might be due to all fetched items already existing or issues during saving."));
+  }
+}
+
+export async function recordUserLike(userId: number, restaurantId: number): Promise<void> {
+  const db = await initDB();
+  try {
+    await db.run(
+      'INSERT INTO user_likes (user_id, restaurant_id) VALUES (?, ?) ON CONFLICT(user_id, restaurant_id) DO NOTHING',
+      userId,
+      restaurantId
+    );
+    // console.log(`User ${userId} liked restaurant ${restaurantId}.`); // Optional: for debugging
+  } catch (error) {
+    console.error(chalk.red(`Error recording like for user ${userId}, restaurant ${restaurantId}:`), error);
+  }
+}
+
+export async function getLikedRestaurantIdsByUser(userId: number): Promise<number[]> {
+  const db = await initDB();
+  try {
+    const rows = await db.all<{ restaurant_id: number }[]>(
+      'SELECT restaurant_id FROM user_likes WHERE user_id = ?',
+      userId
+    );
+    return rows.map(row => row.restaurant_id);
+  } catch (error) {
+    console.error(chalk.red(`Error fetching liked restaurants for user ${userId}:`), error);
+    return [];
   }
 }
