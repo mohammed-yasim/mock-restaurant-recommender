@@ -1,6 +1,6 @@
 // src/recommender.ts
 import type { User, Restaurant, UserPreferences } from './types';
-import { getAllRestaurants } from './database';
+import { getAllRestaurants } from '../database';
 
 const CUISINE_MATCH_SCORE = 30;
 const DIETARY_MATCH_SCORE = 50; // Higher weight for dietary needs

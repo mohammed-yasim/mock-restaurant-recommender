@@ -1,61 +1,32 @@
 // src/index.ts
-import { initDB, seedInitialData, fetchAndSaveRestaurants, getDB, getAllRestaurants } from './database';
-import { runCLI } from './cli';
+import { initDB, getDB, seedInitialGenericUsers } from './db/setup';
+// Make sure restaurant specific seeding is handled within its module or called appropriately
+// import { seedInitialRestaurantData } from './database/restaurantDb'; // Example
+import { runMainCLI } from './cli/main';
 import chalk from 'chalk';
-import readline from 'readline';
-
-function askInitialLocation(query: string): Promise<string> {
-  const rlPrompt = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  return new Promise(resolve => rlPrompt.question(query, answer => {
-    rlPrompt.close();
-    resolve(answer);
-  }));
-}
 
 async function main() {
-  console.log(chalk.bold.cyan("🚀 Starting Simple Restaurant Recommender 🚀"));
+  console.log(chalk.bold.cyan("🚀 Starting Advanced Recommender System 🚀"));
 
-  const db = await initDB();
+  await initDB(); // Initializes all tables
   console.log(chalk.green("Database connection established."));
 
-  await seedInitialData(); // Seeds users
+  await seedInitialGenericUsers(); // Seeds generic users if none exist
+  // await seedInitialRestaurantData(); // If you have restaurant-specific initial data
 
-  // Check if there are any restaurants. If not, prompt to fetch.
-  const currentRestaurants = await getAllRestaurants(); // Use the existing function
-  if (currentRestaurants.length === 0) {
-    console.log(chalk.yellow("Restaurant database is empty."));
-    
-    if (!process.env.GOOGLE_PLACES_API_KEY) {
-        console.log(chalk.red.bold("Error: GOOGLE_PLACES_API_KEY is not set in your .env file."));
-        console.log(chalk.yellow("Cannot fetch restaurants from Google. The application might not have any restaurant data."));
-        console.log(chalk.cyan("Please create a .env file with your GOOGLE_PLACES_API_KEY."));
-    } else {
-        const location = await askInitialLocation(
-            chalk.cyan("Enter a city or area to search for restaurants (e.g., 'London', 'restaurants near me in Paris'): ")
-        );
-        if (location && location.trim()) {
-            await fetchAndSaveRestaurants(location.trim());
-        } else {
-            console.log(chalk.yellow("No location entered. Skipping initial restaurant fetch."));
-        }
-    }
-  } else {
-    console.log(chalk.blue(`${currentRestaurants.length} restaurants already in DB. Skipping initial API fetch.`));
-  }
+  // The main CLI will now handle fetching data (like restaurants for a location) on demand.
   
-  await runCLI();
+  await runMainCLI();
 
-  await db.close();
+  const dbInstance = await getDB();
+  await dbInstance.close();
   console.log(chalk.bold.cyan("Recommender shut down gracefully."));
 }
 
-main().catch(async (err) => { // Make catch async to await db.close()
+main().catch(async (err) => {
   console.error(chalk.red.bold("Unhandled error in main application:"), err);
   try {
-    const dbInstance = await getDB(); // Attempt to get DB instance
+    const dbInstance = await getDB().catch(() => null);
     if (dbInstance) {
       await dbInstance.close();
       console.log("Database connection closed on error.");

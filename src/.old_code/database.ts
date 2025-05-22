@@ -2,7 +2,7 @@
 import { Database } from 'sqlite';
 import { open } from 'sqlite';
 import type { User, Restaurant } from './types'; // Keep UserPreferences if used
-import { mockUsers } from './data/mockUsers';
+import { mockUsers } from '../data/mockUsers';
 import chalk from 'chalk'; // Assuming you use chalk here too
 
 // Import the new service

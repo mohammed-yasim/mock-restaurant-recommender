@@ -1,5 +1,5 @@
 // src/data/mockUsers.ts
-import type { User } from '../types';
+import type { User } from '../.old_code/types';
 
 export const mockUsers: Omit<User, 'id'>[] = [
   {
